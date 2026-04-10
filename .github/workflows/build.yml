@@ -1,0 +1,87 @@
+name: Build container image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      registry_url:
+        type: string
+        required: false
+      registry:
+        type: string
+        required: false
+      image_repository:
+        type: string
+        required: false
+      image_tag:
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_reference: ${{ steps.compute-image.outputs.image_reference }}
+      image_latest: ${{ steps.compute-image.outputs.image_latest }}
+    env:
+      REGISTRY_URL: ${{ inputs.registry_url || secrets.REGISTRY_URL || 'ghcr.io' }}
+      IMAGE_REPOSITORY: ${{ inputs.image_repository || secrets.IMAGE_REPOSITORY || 'ghcr.io/elegant-software/project-item-status-webhook' }}
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry || env.REGISTRY_URL }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image references
+        id: compute-image
+        run: |
+          echo "IMAGE_REFERENCE=${IMAGE_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "LATEST_IMAGE=${IMAGE_REPOSITORY}:latest" >> "$GITHUB_ENV"
+          echo "image_reference=${IMAGE_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${IMAGE_REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_REFERENCE }}
+            ${{ env.LATEST_IMAGE }}
+          platforms: linux/amd64,linux/arm64
+
+  deploy:
+    needs: build
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image_reference: ${{ needs.build.outputs.image_reference }}
+      kube_namespace: blitzpay-staging
+    secrets: inherit

@@ -1,0 +1,80 @@
+name: Deploy webhook consumer
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_reference:
+        description: 'Image reference to deploy (e.g. ghcr.io/org/repo:sha)'
+        required: false
+      kube_namespace:
+        description: 'Kubernetes namespace'
+        required: true
+        default: blitzpay-staging
+  workflow_call:
+    inputs:
+      image_reference:
+        type: string
+        required: true
+      kube_namespace:
+        type: string
+        required: false
+    secrets:
+      K8S_SERVER:
+        required: false
+      K8S_CA_CERT:
+        required: false
+      K8S_TOKEN:
+        required: false
+
+jobs:
+  apply:
+    runs-on: self-hosted
+    env:
+      KUBE_NAMESPACE: ${{ inputs.kube_namespace || github.event.inputs.kube_namespace || secrets.KUBE_NAMESPACE || 'default' }}
+      IMAGE_REFERENCE: ${{ inputs.image_reference || github.event.inputs.image_reference || 'ghcr.io/elegant-software/project-item-status-webhook:latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+
+      - name: Configure kubectl
+        env:
+          K8S_SERVER: ${{ secrets.K8S_SERVER }}
+          K8S_CA_CERT: ${{ secrets.K8S_CA_CERT }}
+          K8S_TOKEN: ${{ secrets.K8S_TOKEN }}
+        run: |
+          missing=()
+          [ -z "$K8S_SERVER" ]  && missing+=("K8S_SERVER")
+          [ -z "$K8S_CA_CERT" ] && missing+=("K8S_CA_CERT")
+          [ -z "$K8S_TOKEN" ]   && missing+=("K8S_TOKEN")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$K8S_CA_CERT" | base64 -d > "$HOME/.kube/ca.crt"
+
+          kubectl config set-cluster deploy-cluster \
+            --server="$K8S_SERVER" \
+            --certificate-authority="$HOME/.kube/ca.crt" \
+            --embed-certs=true
+
+          kubectl config set-credentials deploy-user \
+            --token="$K8S_TOKEN"
+
+          kubectl config set-context deploy-context \
+            --cluster=deploy-cluster \
+            --user=deploy-user
+
+          kubectl config use-context deploy-context
+
+      - name: Verify cluster connectivity
+        run: kubectl cluster-info --request-timeout=10s
+
+      - name: Render Kubernetes manifest
+        run: |
+          sed "s|\${IMAGE}|${{ env.IMAGE_REFERENCE }}|g" k8s/deployment.yaml > /tmp/deployment.yaml
+
+      - name: Apply Kubernetes manifest
+        run: kubectl apply -f /tmp/deployment.yaml -n "$KUBE_NAMESPACE"

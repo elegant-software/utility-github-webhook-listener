@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-item-status-webhook
+  labels:
+    app: project-item-status-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: project-item-status-webhook
+  template:
+    metadata:
+      labels:
+        app: project-item-status-webhook
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: webhook
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            - name: GITHUB_EVENT_TYPE
+              value: project_status_change
+            - name: GH_BIN
+              value: gh
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-webhook-secrets
+                  key: gh-token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-item-status-webhook
+spec:
+  selector:
+    app: project-item-status-webhook
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: project-item-status-webhook
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - webhook-utils.elegantsoftware.de
+      secretName: wildcard-elegantsoftware-de-tls
+  rules:
+    - host: webhook-utils.elegantsoftware.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: project-item-status-webhook
+                port:
+                  number: 80
