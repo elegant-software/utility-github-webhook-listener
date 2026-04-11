@@ -8,7 +8,7 @@ async function invokeHandler({ method, url, headers, body }, overrides = {}) {
   const resolved = [];
   const handler = createRequestHandler(
     {
-      eventType: "project_status_change",
+      eventType: "issue_{issue}_{status}_{repo}",
       ghBin: "gh"
     },
     {
@@ -118,7 +118,7 @@ test("forwards a valid projects_v2_item webhook", async () => {
   assert.equal(response.forwarded.length, 1);
   assert.deepEqual(response.forwarded[0], {
     ghBin: "gh",
-    eventType: "project_status_change",
+    eventType: "issue_11_in_progress_elegant-ci-cd-pipeline",
     repositoryNameWithOwner: "medimohammadise/elegant-ci-cd-pipeline",
     issueNumber: 11,
     projectStatus: "In Progress"
@@ -187,7 +187,7 @@ test("resolves issue repository from content_node_id before dispatching", async 
   });
   assert.deepEqual(response.forwarded[0], {
     ghBin: "gh",
-    eventType: "project_status_change",
+    eventType: "issue_123_in_progress_repo",
     repositoryNameWithOwner: "owner/repo",
     issueNumber: 123,
     projectStatus: "In Progress"

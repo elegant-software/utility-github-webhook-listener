@@ -44,6 +44,13 @@ function createLogger(baseLogger = console) {
   };
 }
 
+function resolveEventType(template, { projectStatus, issueNumber, repositoryName }) {
+  return template
+    .replace(/\{status\}/g, (projectStatus || "unknown").replace(/\s+/g, "_").toLowerCase())
+    .replace(/\{issue\}/g, String(issueNumber || 0))
+    .replace(/\{repo\}/g, (repositoryName || "unknown").toLowerCase());
+}
+
 function createRequestHandler(config, dependencies = {}) {
   const dispatch = dependencies.dispatchProjectStatusChange || dispatchProjectStatusChange;
   const resolveIssue = dependencies.resolveIssueFromNodeId || resolveIssueFromNodeId;
@@ -155,9 +162,15 @@ function createRequestHandler(config, dependencies = {}) {
         projectStatus: result.projectStatus
       });
 
+      const eventType = resolveEventType(config.eventType, {
+        projectStatus: result.projectStatus,
+        issueNumber,
+        repositoryName
+      });
+
       const dispatchPayload = await dispatch({
         ghBin: config.ghBin,
-        eventType: config.eventType,
+        eventType,
         repositoryNameWithOwner,
         issueNumber,
         projectStatus: result.projectStatus

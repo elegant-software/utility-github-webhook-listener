@@ -19,7 +19,7 @@ test("loads config from the provided environment object", () => {
 test("uses defaults when optional values are missing", () => {
   assert.deepEqual(loadConfig({}), {
     port: 3000,
-    eventType: "project_status_change",
+    eventType: "issue_{issue}_{status}_{repo}",
     ghBin: "gh"
   });
 });
